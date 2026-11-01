@@ -1,0 +1,23 @@
+.piece-preview {
+  display: grid;
+  grid-template-columns: repeat(5, 12px); /* Mniejsze kratki niż na planszy głównej */
+  grid-template-rows: repeat(5, 12px);
+  gap: 1px;
+  background-color: transparent; /* Brak tła siatki, ukrywamy puste pola */
+  margin: 5px;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.piece-preview:hover {
+  transform: scale(1.1); /* Delikatne powiększenie po najechaniu, sugerujące klikalność */
+}
+
+.preview-cell {
+  width: 100%;
+  height: 100%;
+}
+
+.preview-cell.empty {
+  background-color: transparent; /* Niewidzialne kratki dopełniające siatkę 5x5 */
+}
