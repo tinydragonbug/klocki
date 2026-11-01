@@ -1,0 +1,30 @@
+
+
+services:
+  backend:
+    build:
+      context: ./klocki-backend
+      dockerfile: Dockerfile
+    container_name: klocki-backend
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - klocki-net
+
+  frontend:
+    build:
+      context: ./klocki-frontend
+      dockerfile: Dockerfile
+    container_name: klocki-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - klocki-net
+
+networks:
+  klocki-net:
+    driver: bridge

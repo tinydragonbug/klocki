@@ -1,0 +1,10 @@
+# Plik: .gitignore w głównym katalogu
+node_modules/
+dist/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.vscode/
+.DS_Store
