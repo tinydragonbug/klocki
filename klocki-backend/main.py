@@ -1,8 +1,11 @@
 import json
 import asyncio
+import os
 from typing import Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from game_logic import is_move_valid_blokus, player_has_any_valid_move
 from bot_ai import find_bot_move
 
@@ -19,7 +22,7 @@ app.add_middleware(
 PLAYERS_ORDER = ["P1", "P2", "P3", "P4"]
 ALL_PIECES = [str(i) for i in range(1, 22)]
 
-# Hasło dostępu do pokoju dla znajomych
+# Hasło dostępu do pokoju gry
 ROOM_PASSWORD = "kloc"
 
 def get_initial_game_state():
@@ -65,7 +68,7 @@ class ConnectionManager:
         await websocket.accept()
 
     async def join_lobby(self, websocket: WebSocket, nickname: str, token: str) -> str | None:
-        # Powrót rozłączonego gracza po tokenie sesji
+        # Powrót gracza po istniejącym tokenie sesji
         for p_id, p_token in game_state.get("player_tokens", {}).items():
             if p_token == token:
                 self.active_connections[p_id] = websocket
@@ -222,12 +225,36 @@ async def websocket_endpoint(websocket: WebSocket):
                         }
                         game_state["player_names"][target_slot] = names_map.get(slot_type, "Bot")
                     else:
-                        if target_slot not in game_state.get("player_tokens", {}):
+                        if target_slot not in manager.active_connections:
                             game_state["player_names"].pop(target_slot, None)
                     await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
 
+            elif msg_type == "FILL_EMPTY_WITH_BOTS":
+                if sender_player == game_state["host"] and game_state["status"] == "WAITING":
+                    for slot in PLAYERS_ORDER:
+                        if slot not in manager.active_connections and game_state["player_types"].get(slot) == "HUMAN":
+                            game_state["player_types"][slot] = "BOT_EASY"
+                            game_state["player_names"][slot] = "Bot (Łatwy)"
+                    await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
+                    await manager.broadcast({"type": "GAME_LOG", "message": "🤖 Puste miejsca zostały uzupełnione botami."})
+
             elif msg_type == "START_GAME":
                 if sender_player == game_state["host"] and game_state["status"] == "WAITING":
+                    unfilled_slots = []
+                    for slot in PLAYERS_ORDER:
+                        slot_type = game_state["player_types"].get(slot, "HUMAN")
+                        has_active_human = (slot_type == "HUMAN" and slot in manager.active_connections)
+                        is_bot = (slot_type != "HUMAN")
+                        if not (has_active_human or is_bot):
+                            unfilled_slots.append(slot)
+
+                    if unfilled_slots:
+                        await websocket.send_text(json.dumps({
+                            "type": "GAME_LOG",
+                            "message": f"⚠️ Nie można wystartować! Wolne miejsca: {', '.join(unfilled_slots)}. Uzupełnij je botami lub poczekaj na graczy."
+                        }))
+                        continue
+
                     game_state["status"] = "PLAYING"
                     await manager.broadcast({"type": "GAME_LOG", "message": "Host wystartował grę!"})
                     await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
@@ -236,7 +263,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         asyncio.create_task(execute_bot_turn(first_p))
 
             elif msg_type == "RESTART_GAME":
-                # Restart partii w tym samym składzie graczy i botów
                 current_names = game_state["player_names"].copy()
                 current_tokens = game_state.get("player_tokens", {}).copy()
                 current_types = game_state.get("player_types", {}).copy()
@@ -259,19 +285,28 @@ async def websocket_endpoint(websocket: WebSocket):
                     asyncio.create_task(execute_bot_turn(first_p))
 
             elif msg_type == "RETURN_TO_LOBBY":
-                # Powrót do poczekalni z zachowaniem obecnych graczy
-                current_names = game_state["player_names"].copy()
-                current_tokens = game_state.get("player_tokens", {}).copy()
-                current_types = game_state.get("player_types", {}).copy()
-                current_host = game_state["host"]
+                active_ids = list(manager.active_connections.keys())
+                new_names = {}
+                new_tokens = {}
+                new_types = {}
+
+                for slot in PLAYERS_ORDER:
+                    if slot in active_ids:
+                        new_names[slot] = game_state["player_names"].get(slot, f"Gracz {slot}")
+                        new_tokens[slot] = game_state["player_tokens"].get(slot, "")
+                        new_types[slot] = "HUMAN"
+                    else:
+                        new_types[slot] = "HUMAN"
+
+                new_host = game_state["host"] if game_state["host"] in active_ids else (active_ids[0] if active_ids else None)
 
                 game_state.clear()
                 game_state.update(get_initial_game_state())
 
-                game_state["player_names"] = current_names
-                game_state["player_tokens"] = current_tokens
-                game_state["player_types"] = current_types
-                game_state["host"] = current_host
+                game_state["player_names"] = new_names
+                game_state["player_tokens"] = new_tokens
+                game_state["player_types"] = new_types
+                game_state["host"] = new_host
                 game_state["status"] = "WAITING"
 
                 await manager.broadcast({"type": "GAME_LOG", "message": "👥 Powrót do Poczekalni — gotowi na zmiany składu."})
@@ -318,27 +353,27 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(assigned_player_id)
         if assigned_player_id:
             nick = game_state["player_names"].get(assigned_player_id, assigned_player_id)
+            if game_state["status"] == "WAITING":
+                game_state["player_names"].pop(assigned_player_id, None)
+                game_state["player_tokens"].pop(assigned_player_id, None)
+                if game_state["host"] == assigned_player_id:
+                    remaining = list(manager.active_connections.keys())
+                    game_state["host"] = remaining[0] if remaining else None
+                await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
             await manager.broadcast({"type": "GAME_LOG", "message": f"{nick} rozłączył się."})
 
-import os
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-
-# Sprawdzamy obecność katalogu static (zbudowanego w kontenerze produkcyjnym)
+# Obsługa serwowania frontendu w kontenerze produkcyjnym
 if os.path.exists("static"):
-    # 1. Montujemy zasoby statyczne (pliki JS, CSS, obrazki z Vite)
     if os.path.exists("static/assets"):
         app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
 
-    # 2. Główny punkt wejścia do gry
     @app.get("/")
     async def serve_index():
         return FileResponse("static/index.html")
 
-    # 3. Obsługa pozostałych ścieżek SPA (Single Page Application)
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         file_path = os.path.join("static", full_path)
         if os.path.isfile(file_path):
             return FileResponse(file_path)
-        return FileResponse("static/index.html")          
+        return FileResponse("static/index.html")

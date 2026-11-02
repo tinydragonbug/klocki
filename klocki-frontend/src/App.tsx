@@ -158,6 +158,17 @@ function App() {
     }
   };
 
+  const handleFillBots = () => {
+    if (socket && isConnected && myPlayerId === hostPlayer) {
+      socket.send(
+        JSON.stringify({
+          type: 'FILL_EMPTY_WITH_BOTS',
+          data: { player: myPlayerId },
+        })
+      );
+    }
+  };
+
   const handleRestartGame = () => {
     if (socket && isConnected) {
       socket.send(JSON.stringify({ type: 'RESTART_GAME' }));
@@ -384,6 +395,7 @@ function App() {
           playerTypes={playerTypes}
           onSetSlotType={handleSetSlotType}
           onStartGame={handleStartGame}
+          onFillBots={handleFillBots}
         />
       )}
 
