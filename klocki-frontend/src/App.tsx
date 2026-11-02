@@ -78,7 +78,6 @@ function App() {
       const message = JSON.parse(event.data);
 
       if (message.type === 'PONG') {
-        // Serwer żyje, połączenie podtrzymane
         return;
       }
 
@@ -96,7 +95,7 @@ function App() {
       } else if (message.type === 'STATE_UPDATE') {
         setGrid(message.data.grid || {});
         setInventories(message.data.inventories || {});
-        setCurrentTurn(message.data.current_turn);
+        setCurrentTurn(message.data.current_turn || 'P1');
         setPlayerNames(message.data.player_names || {});
         setGameStatus(message.data.status || 'WAITING');
         setHostPlayer(message.data.host || null);
@@ -111,7 +110,7 @@ function App() {
     ws.onclose = () => setIsConnected(false);
     setSocket(ws);
 
-    // KULOODPORNY HEARTBEAT: Ping serwera co 15 sekund zapobiega rozłączeniu na smartfonach
+    // Heartbeat podtrzymujący połączenie na urządzeniach mobilnych
     const heartbeatInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'PING' }));
@@ -383,8 +382,9 @@ function App() {
     );
   }
 
-  // ZABEZPIECZENIE PRZED BIAŁYM EKRANEM: Bezpieczny odczyt inwentarza
-  const myInventory = inventories?.[myPlayerId] ?? [];
+  // ZABEZPIECZENIE PRZED BIAŁYM EKRANEM: Odporny odczyt inwentarza
+  const myInventoryRaw = myPlayerId && inventories ? inventories[myPlayerId] : null;
+  const myInventory = Array.isArray(myInventoryRaw) ? myInventoryRaw : [];
   const myAvailablePieces = FULL_CATALOG.filter((piece) =>
     myInventory.includes(String(piece.id))
   );
@@ -476,7 +476,7 @@ function App() {
 
           <div className="side-panel">
             <PlayerHand
-              playerId={myPlayerId as PlayerId}
+              playerId={(myPlayerId as PlayerId) || 'P1'}
               pieces={myAvailablePieces}
             />
 

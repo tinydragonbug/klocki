@@ -68,7 +68,7 @@ class ConnectionManager:
         await websocket.accept()
 
     async def join_lobby(self, websocket: WebSocket, nickname: str, token: str) -> str | None:
-        # 1. Powrót gracza po tokenie
+        # 1. Powrót gracza po istniejącym tokenie sesji
         for p_id, p_token in game_state.get("player_tokens", {}).items():
             if p_token == token:
                 self.active_connections[p_id] = websocket
@@ -197,7 +197,7 @@ async def websocket_endpoint(websocket: WebSocket):
             msg_type = message.get("type")
             payload = message.get("data", {})
 
-            # Obsługa podtrzymywania połączenia (Heartbeat / Ping-Pong)
+            # Ping-Pong podtrzymujący połączenie mobilne
             if msg_type == "PING":
                 await websocket.send_text(json.dumps({"type": "PONG"}))
                 continue
@@ -229,7 +229,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             sender_player = payload.get("player", assigned_player_id)
 
-            # Ręczne opuszczenie pokoju przez gracza
+            # Wyjście z gry (wylogowanie)
             if msg_type == "LEAVE_LOBBY":
                 manager.disconnect(assigned_player_id)
                 game_state["player_names"].pop(assigned_player_id, None)
@@ -243,7 +243,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 assigned_player_id = None
                 break
 
-            # Przełączanie trudności / typu bota w slocie
+            # Cykliczna zmiana poziomu bota w slocie
             elif msg_type == "TOGGLE_SLOT_TYPE":
                 target_slot = payload.get("slot")
                 if sender_player == game_state["host"] and game_state["status"] == "WAITING" and target_slot in PLAYERS_ORDER:
@@ -267,7 +267,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                         await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
 
-            # Zajęcie innego slotu (zmiana koloru przez gracza)
+            # KULOODPORNA ZMIANA MIEJSCA (BEZ BIAŁEGO EKRANU)
             elif msg_type == "CLAIM_SLOT":
                 target_slot = payload.get("slot")
                 if game_state["status"] == "WAITING" and target_slot in PLAYERS_ORDER:
@@ -276,13 +276,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         my_nick = game_state["player_names"].get(old_slot, "Gracz")
                         my_token = game_state["player_tokens"].get(old_slot, "")
 
-                        # Zwalniamy stary slot
-                        manager.disconnect(old_slot)
+                        # Atomowe przepisanie danych bez utraty spójności
+                        if old_slot in manager.active_connections:
+                            del manager.active_connections[old_slot]
                         game_state["player_names"].pop(old_slot, None)
                         game_state["player_tokens"].pop(old_slot, None)
                         game_state["player_types"][old_slot] = "HUMAN"
 
-                        # Rejestrujemy w nowym slocie
                         assigned_player_id = target_slot
                         manager.active_connections[target_slot] = websocket
                         game_state["player_types"][target_slot] = "HUMAN"
@@ -292,11 +292,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         if game_state["host"] == old_slot:
                             game_state["host"] = target_slot
 
+                        # 1. Najpierw aktualizujemy cały stan stołu
+                        await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
+                        # 2. Potem potwierdzamy graczowi jego nowy identyfikator
                         await websocket.send_text(json.dumps({
                             "type": "ASSIGN_PLAYER",
                             "data": {"playerId": target_slot, "nickname": my_nick}
                         }))
-                        await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
 
             elif msg_type == "FILL_EMPTY_WITH_BOTS":
                 if sender_player == game_state["host"] and game_state["status"] == "WAITING":
