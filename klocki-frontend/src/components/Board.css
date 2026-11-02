@@ -1,83 +1,106 @@
-.board {
-  display: grid;
-  grid-template-columns: repeat(20, 20px);
-  grid-template-rows: repeat(20, 20px);
-  /* Zamiast obramowania komórek, używamy 1px luki. Szare tło planszy tworzy idealne linie. */
+/* Kontener bazowy planszy — punkt odniesienia dla narożników */
+.board-container {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  margin: 12px auto;
+}
+
+/* Kolorowe punkty startowe na ramce planszy */
+.frame-marker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.marker-p1 {
+  top: -6px;
+  left: -6px;
+  background-color: #e74c3c; /* Czerwony */
+}
+
+.marker-p2 {
+  top: -6px;
+  right: -6px;
+  background-color: #3498db; /* Niebieski */
+}
+
+.marker-p3 {
+  bottom: -6px;
+  right: -6px;
+  background-color: #f1c40f; /* Żółty */
+}
+
+.marker-p4 {
+  bottom: -6px;
+  left: -6px;
+  background-color: #2ecc71; /* Zielony */
+}
+
+/* Siatka planszy na PC — 480x480 px + obramowanie */
+.board,
+.board-grid {
+  display: grid !important;
+  grid-template-columns: repeat(20, 24px) !important;
+  grid-template-rows: repeat(20, 24px) !important;
   gap: 1px;
-  background-color: #ccc; 
-  border: 2px solid #333; 
-  width: max-content;
+  background-color: #7f8c8d;
+  border: 4px solid #2c3e50;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-sizing: content-box;
+  width: 499px !important;
+  height: 499px !important;
+  min-width: 499px;
+  min-height: 499px;
+  user-select: none;
+  touch-action: none;
 }
 
 .board-cell {
-  /* Komórki nie mają już obramowania (border), więc nie rozpychają układu */
-  width: 100%;
-  height: 100%;
-  background-color: white; 
+  width: 24px !important;
+  height: 24px !important;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  transition: background-color 0.05s ease;
 }
 
-/* Kolory graczy (Zapełnione pola) */
-.board-cell.player-P1 { background-color: #e74c3c; }
-.board-cell.player-P2 { background-color: #3498db; }
-.board-cell.player-P3 { background-color: #2ecc71; }
-.board-cell.player-P4 { background-color: #f1c40f; }
-
-CSS
-/* --- Oznaczenie rogów startowych (Kolorowe fragmenty ramki) --- */
-.board {
-  position: relative; /* Pozwala na nałożenie kątowników */
-  /* reszta Twoich stylów .board pozostaje bez zmian (np. display: grid) */
-}
-/* --- Oznaczenie rogów startowych (Kolorowe kątowniki ramki) --- */
-.board-container {
-  position: relative;
-  display: inline-block; /* Dopasowuje się ciasno do fizycznego rozmiaru siatki .board */
+/* Delikatna ramka podglądu podczas przeciągania */
+.board-cell.hover-valid {
+  outline: 2px solid rgba(0, 0, 0, 0.35);
+  z-index: 2;
 }
 
-.frame-marker {
-  position: absolute;
-  width: 25px; /* Delikatnie wydłużone ramiona kątownika dla lepszej widoczności */
-  height: 25px;
-  z-index: 10;
-  pointer-events: none; /* KRYTYCZNE: Myszka przenika przez nakładkę */
+.board-cell.hover-invalid {
+  outline: 1px dashed rgba(0, 0, 0, 0.3);
+  z-index: 2;
 }
 
-/* 
-  Pozycjonujemy kątowniki idealnie na krawędziach kontenera.
-  Pogrubione obramowanie stworzy efekt nałożenia na czarną ramkę planszy.
-*/
+/* Urządzenia mobilne i tablety */
+@media (max-width: 950px) {
+  .board,
+  .board-grid {
+    grid-template-columns: repeat(20, 20px) !important;
+    grid-template-rows: repeat(20, 20px) !important;
+    width: 419px !important;
+    height: 419px !important;
+    min-width: 419px;
+    min-height: 419px;
+    border-width: 3px;
+  }
 
-/* P1 - Lewy Górny (Czerwony) */
-.marker-p1 {
-  top: -2px; left: -2px;
-  border-top: 5px solid #e74c3c;
-  border-left: 5px solid #e74c3c;
+  .board-cell {
+    width: 20px !important;
+    height: 20px !important;
+  }
 }
-
-/* P2 - Prawy Górny (Niebieski) */
-.marker-p2 {
-  top: -2px; right: -2px;
-  border-top: 5px solid #3498db;
-  border-right: 5px solid #3498db;
-}
-
-/* P3 - Prawy Dolny (Zolty) */
-.marker-p3 {
-  bottom: -2px; right: -2px;
-  border-bottom: 5px solid #f1c40f;
-  border-right: 5px solid #f1c40f;
-}
-
-/* P4 - Lewy Dolny (Zielony) */
-.marker-p4 {
-  bottom: -2px; left: -2px;
-  border-bottom: 5px solid #2ecc71;
-  border-left: 5px solid #2ecc71;
-}
-
-/* --- Cień klocka (Dynamiczna Walidacja) --- */
-.board-cell.projected-invalid { opacity: 0.3; }
-.board-cell.projected-valid { opacity: 0.9; }
-
-/* POPRAWNY RUCH - Pełny, intensywny kolor (taki sam jak postawiony klocek) */
-.board-cell.projected-valid { opacity: 0.9; }

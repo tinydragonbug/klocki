@@ -82,6 +82,21 @@
   border: 2px solid transparent;
   background: transparent;
   transition: background 0.15s, border-color 0.15s;
+  /* Blokada systemowego zaznaczania i gestów na telefonie */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.hand-draggable-area {
+  padding: 6px;
+  cursor: grab;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  /* Kluczowe dla ekranów dotykowych */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 .piece-compact-item:hover {

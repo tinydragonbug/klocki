@@ -8,6 +8,7 @@ interface GameOverModalProps {
   inventories: Record<string, string[]>;
   calculateScore: (playerId: string) => number;
   onRestartGame: () => void;
+  onReturnToLobby: () => void;
 }
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({
@@ -17,6 +18,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   inventories,
   calculateScore,
   onRestartGame,
+  onReturnToLobby,
 }) => {
   const rankedPlayers = playersList.map((p) => {
     const score = calculateScore(p);
@@ -77,9 +79,31 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           Ranking ułożony wg najwyższego wyniku (najbliżej zera lub na plusie).
         </p>
 
-        <button className="restart-button" onClick={onRestartGame}>
-          Zagraj ponownie
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
+          <button className="restart-button" onClick={onRestartGame}>
+            🔄 Zagraj jeszcze raz (ten sam skład)
+          </button>
+
+          <button
+            onClick={onReturnToLobby}
+            style={{
+              padding: '12px 20px',
+              fontSize: '15px',
+              fontWeight: '600',
+              color: '#495057',
+              backgroundColor: '#e9ecef',
+              border: '1px solid #ced4da',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              width: '80%',
+              maxWidth: '320px',
+              margin: '0 auto',
+              touchAction: 'manipulation',
+            }}
+          >
+            👥 Wróć do Poczekalni (zmień graczy/boty)
+          </button>
+        </div>
       </div>
     </div>
   );

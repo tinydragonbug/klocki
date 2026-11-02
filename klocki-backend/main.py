@@ -1,17 +1,16 @@
 import json
 import asyncio
+from typing import Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from game_logic import is_move_valid_blokus
-from bot_ai import find_bot_move
-from typing import Dict
 from game_logic import is_move_valid_blokus, player_has_any_valid_move
+from bot_ai import find_bot_move
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -19,6 +18,9 @@ app.add_middleware(
 
 PLAYERS_ORDER = ["P1", "P2", "P3", "P4"]
 ALL_PIECES = [str(i) for i in range(1, 22)]
+
+# Hasło dostępu do pokoju dla znajomych
+ROOM_PASSWORD = "kloc"
 
 def get_initial_game_state():
     return {
@@ -63,14 +65,15 @@ class ConnectionManager:
         await websocket.accept()
 
     async def join_lobby(self, websocket: WebSocket, nickname: str, token: str) -> str | None:
+        # Powrót rozłączonego gracza po tokenie sesji
         for p_id, p_token in game_state.get("player_tokens", {}).items():
             if p_token == token:
                 self.active_connections[p_id] = websocket
                 game_state["player_names"][p_id] = nickname
                 return p_id
 
+        # Przydział nowego wolnego slotu przeznaczonego dla człowieka
         for player_id in PLAYERS_ORDER:
-            # Dołączamy tylko do slotów przeznaczonych dla ludzi i jeszcze niezajętych
             if player_id not in game_state.get("player_tokens", {}) and game_state["player_types"].get(player_id) == "HUMAN":
                 self.active_connections[player_id] = websocket
                 game_state["player_names"][player_id] = nickname
@@ -88,7 +91,7 @@ class ConnectionManager:
         for connection in list(self.active_connections.values()):
             try:
                 await connection.send_text(json.dumps(message))
-            except:
+            except Exception:
                 pass
 
 manager = ConnectionManager()
@@ -111,24 +114,20 @@ async def advance_turn_or_end(current_p: str, action_log: str):
         next_p = get_next_turn(current_p, game_state["passed_players"])
         
         if not next_p:
-            # Wszyscy spasowali — koniec gry
             game_state["current_turn"] = "KONIEC"
             game_state["status"] = "FINISHED"
             await manager.broadcast({"type": "GAME_LOG", "message": "🏁 KONIEC GRY! Brak dalszych ruchów."})
             break
 
-        # Weryfikacja, czy kolejny gracz ma legalny ruch
         p_inv = game_state["inventories"].get(next_p, [])
         p_name = game_state["player_names"].get(next_p, next_p)
         has_move = player_has_any_valid_move(game_state["grid"], p_inv, next_p)
 
         if has_move:
-            # Gracz ma ruch — przekazujemy mu turę
             game_state["current_turn"] = next_p
             await manager.broadcast({"type": "GAME_LOG", "message": f"Tura: {p_name}."})
             break
         else:
-            # Auto-pass: brak ruchów
             if next_p not in game_state["passed_players"]:
                 game_state["passed_players"].append(next_p)
             await manager.broadcast({
@@ -139,14 +138,13 @@ async def advance_turn_or_end(current_p: str, action_log: str):
 
     await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
 
-    # Jeśli gra trwa i tura bota — uruchom bota
     if game_state["status"] == "PLAYING" and game_state["current_turn"] != "KONIEC":
         curr = game_state["current_turn"]
         if game_state["player_types"].get(curr, "HUMAN") != "HUMAN":
             asyncio.create_task(execute_bot_turn(curr))
 
 async def execute_bot_turn(bot_id: str):
-    await asyncio.sleep(0.6)  # Naturalna pauza UX
+    await asyncio.sleep(0.6)
     if game_state["status"] != "PLAYING" or game_state["current_turn"] != bot_id:
         return
 
@@ -154,7 +152,6 @@ async def execute_bot_turn(bot_id: str):
     bot_name = game_state["player_names"].get(bot_id, bot_id)
     inv = game_state["inventories"].get(bot_id, [])
 
-    # Wyliczamy ruch w wątku w tle, nie blokując WebSocketów
     piece_id, squares = await asyncio.to_thread(
         find_bot_move,
         game_state["grid"],
@@ -186,6 +183,14 @@ async def websocket_endpoint(websocket: WebSocket):
             payload = message.get("data", {})
 
             if msg_type == "JOIN_LOBBY":
+                password_given = payload.get("password", "")
+                if password_given != ROOM_PASSWORD:
+                    await websocket.send_text(json.dumps({
+                        "type": "ERROR_MESSAGE",
+                        "message": "Niepoprawne hasło pokoju!"
+                    }))
+                    continue
+
                 nickname = payload.get("nickname", "Anonim")
                 token = payload.get("token", "")
                 assigned_player_id = await manager.join_lobby(websocket, nickname, token)
@@ -204,7 +209,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
             sender_player = payload.get("player")
 
-            # Ustawianie typu slotu przez Hosta (np. przypisanie bota)
             if msg_type == "SET_SLOT_TYPE":
                 target_slot = payload.get("slot")
                 slot_type = payload.get("slotType")
@@ -225,13 +229,14 @@ async def websocket_endpoint(websocket: WebSocket):
             elif msg_type == "START_GAME":
                 if sender_player == game_state["host"] and game_state["status"] == "WAITING":
                     game_state["status"] = "PLAYING"
-                    await manager.broadcast({"type": "GAME_LOG", "message": f"Host wystartował grę!"})
+                    await manager.broadcast({"type": "GAME_LOG", "message": "Host wystartował grę!"})
                     await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
                     first_p = game_state["current_turn"]
                     if game_state["player_types"].get(first_p, "HUMAN") != "HUMAN":
                         asyncio.create_task(execute_bot_turn(first_p))
 
             elif msg_type == "RESTART_GAME":
+                # Restart partii w tym samym składzie graczy i botów
                 current_names = game_state["player_names"].copy()
                 current_tokens = game_state.get("player_tokens", {}).copy()
                 current_types = game_state.get("player_types", {}).copy()
@@ -244,8 +249,32 @@ async def websocket_endpoint(websocket: WebSocket):
                 game_state["player_tokens"] = current_tokens
                 game_state["player_types"] = current_types
                 game_state["host"] = current_host
+                game_state["status"] = "PLAYING"
 
-                await manager.broadcast({"type": "GAME_LOG", "message": "Gra zrestartowana!"})
+                await manager.broadcast({"type": "GAME_LOG", "message": "🔄 Rozpoczęto nową partię w tym samym składzie!"})
+                await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
+                
+                first_p = game_state["current_turn"]
+                if game_state["player_types"].get(first_p, "HUMAN") != "HUMAN":
+                    asyncio.create_task(execute_bot_turn(first_p))
+
+            elif msg_type == "RETURN_TO_LOBBY":
+                # Powrót do poczekalni z zachowaniem obecnych graczy
+                current_names = game_state["player_names"].copy()
+                current_tokens = game_state.get("player_tokens", {}).copy()
+                current_types = game_state.get("player_types", {}).copy()
+                current_host = game_state["host"]
+
+                game_state.clear()
+                game_state.update(get_initial_game_state())
+
+                game_state["player_names"] = current_names
+                game_state["player_tokens"] = current_tokens
+                game_state["player_types"] = current_types
+                game_state["host"] = current_host
+                game_state["status"] = "WAITING"
+
+                await manager.broadcast({"type": "GAME_LOG", "message": "👥 Powrót do Poczekalni — gotowi na zmiany składu."})
                 await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
 
             elif msg_type == "PLACE_PIECE":
@@ -287,6 +316,22 @@ async def websocket_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         manager.disconnect(assigned_player_id)
-        nick = game_state["player_names"].get(assigned_player_id, assigned_player_id)
         if assigned_player_id:
+            nick = game_state["player_names"].get(assigned_player_id, assigned_player_id)
             await manager.broadcast({"type": "GAME_LOG", "message": f"{nick} rozłączył się."})
+
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# Sprawdzamy, czy folder ze zbudowanym frontendem istnieje (w kontenerze chmurowym)
+if os.path.exists("static"):
+    app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Każde zapytanie kierujemy do index.html (obsługa SPA Reacta)
+        file_path = os.path.join("static", full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse("static/index.html")            

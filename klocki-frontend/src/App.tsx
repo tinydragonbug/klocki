@@ -1,11 +1,11 @@
-import { LobbyModal } from './components/modals/LobbyModal';
-import { GameOverModal } from './components/modals/GameOverModal';
 import React, { useState, useEffect } from 'react';
-import { DndContext, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import type { DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
+import { DndContext, useSensor, useSensors, PointerSensor, TouchSensor } from '@dnd-kit/core';
 import type { BoardGrid, Piece, PlayerId } from './types';
 import { Board } from './components/Board';
 import { PlayerHand } from './components/PlayerHand';
+import { LobbyModal } from './components/modals/LobbyModal';
+import { GameOverModal } from './components/modals/GameOverModal';
 import { FULL_CATALOG } from './utils/catalog';
 import { isMoveValidClient } from './utils/validation';
 import './App.css';
@@ -50,6 +50,8 @@ function App() {
   const [nicknameInput, setNicknameInput] = useState<string>(
     localStorage.getItem('blokus_nickname') || ''
   );
+  const [passwordInput, setPasswordInput] = useState<string>('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [isChatEnabled, setIsChatEnabled] = useState<boolean>(false);
   const [chatInput, setChatInput] = useState<string>('');
@@ -62,7 +64,14 @@ function App() {
   const [activeTarget, setActiveTarget] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
-    const ws = new WebSocket('ws://localhost:8000/ws');
+    const isHttps = window.location.protocol === 'https:';
+    const wsProtocol = isHttps ? 'wss:' : 'ws:';
+    
+    const wsUrl = window.location.port === '5173'
+      ? 'ws://localhost:8000/ws'
+      : `${wsProtocol}//${window.location.host}/ws`;
+
+    const ws = new WebSocket(wsUrl);
     ws.onopen = () => setIsConnected(true);
 
     ws.onmessage = (event) => {
@@ -70,6 +79,9 @@ function App() {
 
       if (message.type === 'ASSIGN_PLAYER') {
         setMyPlayerId(message.data.playerId);
+        setErrorMessage(null);
+      } else if (message.type === 'ERROR_MESSAGE') {
+        setErrorMessage(message.message);
       } else if (message.type === 'GAME_FULL') {
         setIsGameFull(true);
       } else if (message.type === 'STATE_UPDATE') {
@@ -93,7 +105,17 @@ function App() {
   }, []);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 120,
+        tolerance: 5,
+      },
+    })
   );
 
   const handleJoinLobby = (e: React.FormEvent) => {
@@ -104,7 +126,7 @@ function App() {
       socket.send(
         JSON.stringify({
           type: 'JOIN_LOBBY',
-          data: { nickname: name, token: sessionId },
+          data: { nickname: name, token: sessionId, password: passwordInput.trim() },
         })
       );
     }
@@ -139,6 +161,12 @@ function App() {
   const handleRestartGame = () => {
     if (socket && isConnected) {
       socket.send(JSON.stringify({ type: 'RESTART_GAME' }));
+    }
+  };
+
+  const handleReturnToLobby = () => {
+    if (socket && isConnected) {
+      socket.send(JSON.stringify({ type: 'RETURN_TO_LOBBY' }));
     }
   };
 
@@ -273,7 +301,24 @@ function App() {
               maxLength={15}
               required
               autoFocus
+              style={{ marginBottom: '10px' }}
             />
+            <input
+              type="password"
+              placeholder="Hasło pokoju..."
+              value={passwordInput}
+              onChange={(e) => {
+                setPasswordInput(e.target.value);
+                setErrorMessage(null);
+              }}
+              required
+              style={{ marginBottom: '12px' }}
+            />
+            {errorMessage && (
+              <p style={{ color: '#e74c3c', fontSize: '13px', margin: '0 0 12px 0', fontWeight: 'bold' }}>
+                ⚠️ {errorMessage}
+              </p>
+            )}
             <button type="submit">Dołącz do Gry</button>
           </form>
         </div>
@@ -350,6 +395,7 @@ function App() {
           inventories={inventories}
           calculateScore={calculateScore}
           onRestartGame={handleRestartGame}
+          onReturnToLobby={handleReturnToLobby}
         />
       )}
 
