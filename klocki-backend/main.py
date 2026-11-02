@@ -47,9 +47,9 @@ def get_initial_game_state():
 
 game_state = get_initial_game_state()
 
-@app.get("/")
+@app.get("/api/health")
 def health_check():
-    """Punkt kontrolny (Health Check) potwierdzający działanie serwera gry."""
+    """Punkt kontrolny potwierdzający działanie silnika gry."""
     return {
         "status": "online",
         "service": "Blokus Game Engine",
@@ -324,14 +324,21 @@ import os
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-# Sprawdzamy, czy folder ze zbudowanym frontendem istnieje (w kontenerze chmurowym)
+# Sprawdzamy obecność katalogu static (zbudowanego w kontenerze produkcyjnym)
 if os.path.exists("static"):
-    app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
+    # 1. Montujemy zasoby statyczne (pliki JS, CSS, obrazki z Vite)
+    if os.path.exists("static/assets"):
+        app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
 
+    # 2. Główny punkt wejścia do gry
+    @app.get("/")
+    async def serve_index():
+        return FileResponse("static/index.html")
+
+    # 3. Obsługa pozostałych ścieżek SPA (Single Page Application)
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        # Każde zapytanie kierujemy do index.html (obsługa SPA Reacta)
         file_path = os.path.join("static", full_path)
         if os.path.isfile(file_path):
             return FileResponse(file_path)
-        return FileResponse("static/index.html")            
+        return FileResponse("static/index.html")          
