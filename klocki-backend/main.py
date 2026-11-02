@@ -68,22 +68,34 @@ class ConnectionManager:
         await websocket.accept()
 
     async def join_lobby(self, websocket: WebSocket, nickname: str, token: str) -> str | None:
-        # Powrót gracza po istniejącym tokenie sesji
+        # 1. Powrót gracza po istniejącym tokenie sesji
         for p_id, p_token in game_state.get("player_tokens", {}).items():
             if p_token == token:
                 self.active_connections[p_id] = websocket
                 game_state["player_names"][p_id] = nickname
                 return p_id
 
-        # Przydział nowego wolnego slotu przeznaczonego dla człowieka
+        # 2. Szukamy slotu HUMAN, w którym nie ma aktywnego połączenia
         for player_id in PLAYERS_ORDER:
-            if player_id not in game_state.get("player_tokens", {}) and game_state["player_types"].get(player_id) == "HUMAN":
+            if player_id not in self.active_connections and game_state["player_types"].get(player_id) == "HUMAN":
                 self.active_connections[player_id] = websocket
                 game_state["player_names"][player_id] = nickname
                 game_state["player_tokens"][player_id] = token
-                if game_state["host"] is None:
+                if game_state["host"] is None or game_state["host"] not in self.active_connections:
                     game_state["host"] = player_id
                 return player_id
+
+        # 3. KULOODPORNOŚĆ: Jeśli wszystkie sloty zajęły boty, człowiek ZASTĘPUJE pierwszego wolnego bota!
+        for player_id in PLAYERS_ORDER:
+            if player_id not in self.active_connections and game_state["player_types"].get(player_id) != "HUMAN":
+                self.active_connections[player_id] = websocket
+                game_state["player_types"][player_id] = "HUMAN"
+                game_state["player_names"][player_id] = nickname
+                game_state["player_tokens"][player_id] = token
+                if game_state["host"] is None or game_state["host"] not in self.active_connections:
+                    game_state["host"] = player_id
+                return player_id
+
         return None
 
     def disconnect(self, player_id: str):
@@ -205,29 +217,67 @@ async def websocket_endpoint(websocket: WebSocket):
                     }))
                     await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
                 else:
-                    await websocket.send_text(json.dumps({"type": "GAME_FULL", "message": "Pokój jest pełny."}))
+                    await websocket.send_text(json.dumps({"type": "GAME_FULL", "message": "Pokój jest pełny (4/4 graczy)."}))
 
             if not assigned_player_id:
                 continue
 
             sender_player = payload.get("player")
 
-            if msg_type == "SET_SLOT_TYPE":
+            # Przełączanie typu slotu (Dotykowy przełącznik)
+            if msg_type == "TOGGLE_SLOT_TYPE":
                 target_slot = payload.get("slot")
-                slot_type = payload.get("slotType")
                 if sender_player == game_state["host"] and game_state["status"] == "WAITING" and target_slot in PLAYERS_ORDER:
-                    game_state["player_types"][target_slot] = slot_type
-                    if slot_type != "HUMAN":
+                    if target_slot not in manager.active_connections:
+                        current_t = game_state["player_types"].get(target_slot, "HUMAN")
+                        cycle = ["HUMAN", "BOT_EASY", "BOT_NORMAL", "BOT_MASTER"]
+                        next_idx = (cycle.index(current_t) + 1) % len(cycle)
+                        next_t = cycle[next_idx]
+                        
+                        game_state["player_types"][target_slot] = next_t
                         names_map = {
+                            "HUMAN": "Czeka na gracza...",
                             "BOT_EASY": "Bot (Łatwy)",
                             "BOT_NORMAL": "Bot (Zwyczajny)",
                             "BOT_MASTER": "Bot (Mistrz)"
                         }
-                        game_state["player_names"][target_slot] = names_map.get(slot_type, "Bot")
-                    else:
-                        if target_slot not in manager.active_connections:
+                        if next_t != "HUMAN":
+                            game_state["player_names"][target_slot] = names_map[next_t]
+                        else:
                             game_state["player_names"].pop(target_slot, None)
-                    await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
+
+                        await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
+
+            elif msg_type == "CLAIM_SLOT":
+                target_slot = payload.get("slot")
+                if game_state["status"] == "WAITING" and target_slot in PLAYERS_ORDER:
+                    # Sprawdzamy czy slot nie jest zajęty przez innego aktywnego człowieka
+                    if target_slot not in manager.active_connections:
+                        old_slot = assigned_player_id
+                        my_nick = game_state["player_names"].get(old_slot, "Gracz")
+                        my_token = game_state["player_tokens"].get(old_slot, "")
+
+                        # Zwalniamy stary slot
+                        manager.disconnect(old_slot)
+                        game_state["player_names"].pop(old_slot, None)
+                        game_state["player_tokens"].pop(old_slot, None)
+                        game_state["player_types"][old_slot] = "HUMAN"
+
+                        # Zajmujemy nowy slot
+                        assigned_player_id = target_slot
+                        manager.active_connections[target_slot] = websocket
+                        game_state["player_types"][target_slot] = "HUMAN"
+                        game_state["player_names"][target_slot] = my_nick
+                        game_state["player_tokens"][target_slot] = my_token
+
+                        if game_state["host"] == old_slot:
+                            game_state["host"] = target_slot
+
+                        await websocket.send_text(json.dumps({
+                            "type": "ASSIGN_PLAYER",
+                            "data": {"playerId": target_slot, "nickname": my_nick}
+                        }))
+                        await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
 
             elif msg_type == "FILL_EMPTY_WITH_BOTS":
                 if sender_player == game_state["host"] and game_state["status"] == "WAITING":
@@ -309,7 +359,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 game_state["host"] = new_host
                 game_state["status"] = "WAITING"
 
-                await manager.broadcast({"type": "GAME_LOG", "message": "👥 Powrót do Poczekalni — gotowi na zmiany składu."})
+                await manager.broadcast({"type": "GAME_LOG", "message": "👥 Powrót do Poczekalni — wyczyszczono stół."})
                 await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
 
             elif msg_type == "PLACE_PIECE":
@@ -362,7 +412,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast({"type": "STATE_UPDATE", "data": game_state})
             await manager.broadcast({"type": "GAME_LOG", "message": f"{nick} rozłączył się."})
 
-# Obsługa serwowania frontendu w kontenerze produkcyjnym
 if os.path.exists("static"):
     if os.path.exists("static/assets"):
         app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")

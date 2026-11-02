@@ -7,7 +7,8 @@ interface LobbyModalProps {
   playersList: PlayerId[];
   playerNames: Record<string, string>;
   playerTypes: Record<string, string>;
-  onSetSlotType: (slot: string, slotType: string) => void;
+  onToggleSlotType: (slot: string) => void;
+  onClaimSlot: (slot: string) => void;
   onStartGame: () => void;
   onFillBots: () => void;
 }
@@ -18,7 +19,8 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
   playersList,
   playerNames,
   playerTypes,
-  onSetSlotType,
+  onToggleSlotType,
+  onClaimSlot,
   onStartGame,
   onFillBots,
 }) => {
@@ -31,22 +33,31 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
   };
 
   const allSlotsReady = playersList.every(isSlotReady);
-  const hasEmptyHumanSlots = playersList.some((s) => (playerTypes[s] === 'HUMAN' && !playerNames[s]));
+  const hasEmptyHumanSlots = playersList.some((s) => playerTypes[s] === 'HUMAN' && !playerNames[s]);
+
+  const getSlotTypeLabel = (type: string) => {
+    switch (type) {
+      case 'BOT_EASY': return '🤖 Bot (Łatwy)';
+      case 'BOT_NORMAL': return '🤖 Bot (Zwyczajny)';
+      case 'BOT_MASTER': return '🤖 Bot (Mistrz)';
+      default: return '👤 Czeka na gracza';
+    }
+  };
 
   return (
     <div className="game-over-overlay">
-      <div className="game-over-modal" style={{ maxWidth: '520px', width: '92%' }}>
-        <h2>Poczekalnia</h2>
-        <p style={{ color: '#6c757d', fontSize: '14px', margin: '-5px 0 16px 0' }}>
-          Oczekujemy na graczy i gotowość Hosta (wymagane 4 miejsca)...
+      <div className="game-over-modal" style={{ maxWidth: '520px', width: '94%', padding: '20px' }}>
+        <h2 style={{ margin: '0 0 6px 0', fontSize: '24px' }}>Poczekalnia</h2>
+        <p style={{ color: '#6c757d', fontSize: '13px', margin: '0 0 16px 0' }}>
+          Do gry wymagane są 4 obsadzone miejsca (gracze lub boty).
         </p>
 
-        <table className="score-table" style={{ margin: '10px 0 20px 0' }}>
+        <table className="score-table" style={{ margin: '0 0 16px 0', fontSize: '14px' }}>
           <thead>
             <tr>
-              <th style={{ width: '25%' }}>Miejsce</th>
-              <th style={{ width: '45%' }}>Gracz</th>
-              <th style={{ width: '30%' }}>Typ Slotu</th>
+              <th style={{ width: '22%' }}>Miejsce</th>
+              <th style={{ width: '40%' }}>Gracz</th>
+              <th style={{ width: '38%' }}>Zarządzanie</th>
             </tr>
           </thead>
           <tbody>
@@ -59,48 +70,75 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
               return (
                 <tr key={slot} className={isMe ? 'my-score-row' : ''}>
                   <td style={{ fontWeight: 'bold' }}>
-                    {slot} {isSlotHost && '👑 (Host)'}
+                    {slot} {isSlotHost && '👑'}
                   </td>
                   <td>
                     {isOccupiedByHuman && (
-                      <span style={{ color: '#2ecc71', fontWeight: 'bold' }}>
+                      <span style={{ color: '#27ae60', fontWeight: 'bold' }}>
                         {playerNames[slot]} {isMe && '(Ty)'}
                       </span>
                     )}
                     {isBot && (
-                      <span style={{ color: '#3498db', fontWeight: 'bold' }}>
-                        🤖 {playerNames[slot] || 'Bot'}
+                      <span style={{ color: '#2980b9', fontWeight: 'bold' }}>
+                        {playerNames[slot] || 'Bot'}
                       </span>
                     )}
                     {!isOccupiedByHuman && !isBot && (
                       <span style={{ color: '#95a5a6', fontStyle: 'italic' }}>
-                        ⚪ Wolne miejsce...
+                        ⚪ Wolne
                       </span>
                     )}
                   </td>
                   <td>
-                    {isHost && !isOccupiedByHuman ? (
-                      <select
-                        value={playerTypes[slot] || 'HUMAN'}
-                        onChange={(e) => onSetSlotType(slot, e.target.value)}
+                    {/* Jeśli slot jest wolny lub jest botem, gracz może w niego usiąść */}
+                    {!isMe && !isOccupiedByHuman && (
+                      <button
+                        type="button"
+                        onClick={() => onClaimSlot(slot)}
                         style={{
-                          padding: '6px',
+                          padding: '6px 10px',
+                          fontSize: '12px',
+                          backgroundColor: '#2ecc71',
+                          color: '#fff',
+                          border: 'none',
                           borderRadius: '4px',
-                          border: '1px solid #ced4da',
-                          fontSize: '13px',
-                          background: '#fff',
                           cursor: 'pointer',
+                          fontWeight: 'bold',
+                          marginRight: '6px',
+                          touchAction: 'manipulation',
                         }}
                       >
-                        <option value="HUMAN">Czekaj na gracza</option>
-                        <option value="BOT_EASY">Bot (Łatwy)</option>
-                        <option value="BOT_NORMAL">Bot (Zwyczajny)</option>
-                        <option value="BOT_MASTER">Bot (Mistrz)</option>
-                      </select>
-                    ) : (
-                      <span style={{ fontSize: '13px', color: '#495057' }}>
-                        {playerTypes[slot] === 'HUMAN' ? 'Gracz (Człowiek)' : 'Sztuczna Inteligencja'}
-                      </span>
+                        Usiądź
+                      </button>
+                    )}
+
+                    {/* Host ma dotykowy przycisk do cyklicznej zmiany typu slotu */}
+                    {isHost && !isOccupiedByHuman && (
+                      <button
+                        type="button"
+                        onClick={() => onToggleSlotType(slot)}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: '12px',
+                          backgroundColor: isBot ? '#e8f4fd' : '#f8f9fa',
+                          color: '#2c3e50',
+                          border: '1px solid #ced4da',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontWeight: '600',
+                          touchAction: 'manipulation',
+                        }}
+                        title="Kliknij, aby zmienić typ"
+                      >
+                        {getSlotTypeLabel(playerTypes[slot] || 'HUMAN')} 🔄
+                      </button>
+                    )}
+
+                    {!isHost && isOccupiedByHuman && !isMe && (
+                      <span style={{ fontSize: '12px', color: '#7f8c8d' }}>Zajęte</span>
+                    )}
+                    {isMe && (
+                      <span style={{ fontSize: '12px', color: '#27ae60', fontWeight: 'bold' }}>Twoje miejsce</span>
                     )}
                   </td>
                 </tr>
@@ -116,7 +154,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                 type="button"
                 onClick={onFillBots}
                 style={{
-                  padding: '10px',
+                  padding: '12px',
                   backgroundColor: '#3498db',
                   color: 'white',
                   border: 'none',
@@ -124,6 +162,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                   fontWeight: 'bold',
                   fontSize: '14px',
                   cursor: 'pointer',
+                  touchAction: 'manipulation',
                 }}
               >
                 🤖 Uzupełnij puste miejsca Botami
@@ -138,14 +177,18 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                 backgroundColor: allSlotsReady ? '#2ecc71' : '#bdc3c7',
                 cursor: allSlotsReady ? 'pointer' : 'not-allowed',
                 boxShadow: allSlotsReady ? '0 4px 10px rgba(46, 204, 113, 0.35)' : 'none',
+                width: '100%',
+                maxWidth: '100%',
+                padding: '14px',
+                touchAction: 'manipulation',
               }}
             >
               {allSlotsReady ? '🚀 Wystartuj Grę!' : '⏳ Czekam na obsadzenie 4 miejsc...'}
             </button>
           </div>
         ) : (
-          <p style={{ color: '#f39c12', fontWeight: 'bold', margin: '14px 0 0 0' }}>
-            👑 Tylko Host może zarządzać botami i wystartować grę.
+          <p style={{ color: '#d35400', fontWeight: 'bold', fontSize: '14px', margin: '10px 0 0 0' }}>
+            👑 Oczekuj na gotowość Hosta do startu gry.
           </p>
         )}
       </div>

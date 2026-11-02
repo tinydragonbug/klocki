@@ -80,6 +80,7 @@ function App() {
       if (message.type === 'ASSIGN_PLAYER') {
         setMyPlayerId(message.data.playerId);
         setErrorMessage(null);
+        setIsGameFull(false);
       } else if (message.type === 'ERROR_MESSAGE') {
         setErrorMessage(message.message);
       } else if (message.type === 'GAME_FULL') {
@@ -143,15 +144,27 @@ function App() {
     }
   };
 
-  const handleSetSlotType = (slot: string, slotType: string) => {
+  const handleToggleSlotType = (slot: string) => {
     if (socket && isConnected && myPlayerId === hostPlayer) {
       socket.send(
         JSON.stringify({
-          type: 'SET_SLOT_TYPE',
+          type: 'TOGGLE_SLOT_TYPE',
           data: {
             player: myPlayerId,
             slot: slot,
-            slotType: slotType,
+          },
+        })
+      );
+    }
+  };
+
+  const handleClaimSlot = (slot: string) => {
+    if (socket && isConnected) {
+      socket.send(
+        JSON.stringify({
+          type: 'CLAIM_SLOT',
+          data: {
+            slot: slot,
           },
         })
       );
@@ -393,7 +406,8 @@ function App() {
           playersList={PLAYERS_LIST}
           playerNames={playerNames}
           playerTypes={playerTypes}
-          onSetSlotType={handleSetSlotType}
+          onToggleSlotType={handleToggleSlotType}
+          onClaimSlot={handleClaimSlot}
           onStartGame={handleStartGame}
           onFillBots={handleFillBots}
         />
