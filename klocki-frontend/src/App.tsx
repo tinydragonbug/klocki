@@ -77,17 +77,25 @@ function App() {
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
 
+      if (message.type === 'PONG') {
+        // Serwer żyje, połączenie podtrzymane
+        return;
+      }
+
       if (message.type === 'ASSIGN_PLAYER') {
         setMyPlayerId(message.data.playerId);
         setErrorMessage(null);
         setIsGameFull(false);
+      } else if (message.type === 'LOGGED_OUT') {
+        setMyPlayerId(null);
+        localStorage.removeItem('blokus_session_id');
       } else if (message.type === 'ERROR_MESSAGE') {
         setErrorMessage(message.message);
       } else if (message.type === 'GAME_FULL') {
         setIsGameFull(true);
       } else if (message.type === 'STATE_UPDATE') {
-        setGrid(message.data.grid);
-        setInventories(message.data.inventories);
+        setGrid(message.data.grid || {});
+        setInventories(message.data.inventories || {});
         setCurrentTurn(message.data.current_turn);
         setPlayerNames(message.data.player_names || {});
         setGameStatus(message.data.status || 'WAITING');
@@ -102,7 +110,18 @@ function App() {
 
     ws.onclose = () => setIsConnected(false);
     setSocket(ws);
-    return () => ws.close();
+
+    // KULOODPORNY HEARTBEAT: Ping serwera co 15 sekund zapobiega rozłączeniu na smartfonach
+    const heartbeatInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'PING' }));
+      }
+    }, 15000);
+
+    return () => {
+      clearInterval(heartbeatInterval);
+      ws.close();
+    };
   }, []);
 
   const sensors = useSensors(
@@ -131,6 +150,14 @@ function App() {
         })
       );
     }
+  };
+
+  const handleLeaveLobby = () => {
+    if (socket && isConnected) {
+      socket.send(JSON.stringify({ type: 'LEAVE_LOBBY', data: { player: myPlayerId } }));
+    }
+    setMyPlayerId(null);
+    localStorage.removeItem('blokus_session_id');
   };
 
   const handleStartGame = () => {
@@ -298,7 +325,13 @@ function App() {
   if (isGameFull) {
     return (
       <div className="full-screen-message">
-        Przepraszamy, pokój gry jest już pełny (4/4 graczy).
+        <p>Przepraszamy, pokój gry jest już pełny (4/4 graczy).</p>
+        <button 
+          onClick={() => { setIsGameFull(false); setMyPlayerId(null); }}
+          style={{ padding: '10px 20px', cursor: 'pointer', marginTop: '10px' }}
+        >
+          Wróć do logowania
+        </button>
       </div>
     );
   }
@@ -350,7 +383,8 @@ function App() {
     );
   }
 
-  const myInventory = inventories?.[myPlayerId] || [];
+  // ZABEZPIECZENIE PRZED BIAŁYM EKRANEM: Bezpieczny odczyt inwentarza
+  const myInventory = inventories?.[myPlayerId] ?? [];
   const myAvailablePieces = FULL_CATALOG.filter((piece) =>
     myInventory.includes(String(piece.id))
   );
@@ -410,6 +444,7 @@ function App() {
           onClaimSlot={handleClaimSlot}
           onStartGame={handleStartGame}
           onFillBots={handleFillBots}
+          onLeaveLobby={handleLeaveLobby}
         />
       )}
 

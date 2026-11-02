@@ -11,6 +11,7 @@ interface LobbyModalProps {
   onClaimSlot: (slot: string) => void;
   onStartGame: () => void;
   onFillBots: () => void;
+  onLeaveLobby: () => void;
 }
 
 export const LobbyModal: React.FC<LobbyModalProps> = ({
@@ -23,6 +24,7 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
   onClaimSlot,
   onStartGame,
   onFillBots,
+  onLeaveLobby,
 }) => {
   const isHost = myPlayerId === hostPlayer;
 
@@ -47,8 +49,28 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
   return (
     <div className="game-over-overlay">
       <div className="game-over-modal" style={{ maxWidth: '520px', width: '94%', padding: '20px' }}>
-        <h2 style={{ margin: '0 0 6px 0', fontSize: '24px' }}>Poczekalnia</h2>
-        <p style={{ color: '#6c757d', fontSize: '13px', margin: '0 0 16px 0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <h2 style={{ margin: 0, fontSize: '24px' }}>Poczekalnia</h2>
+          <button
+            type="button"
+            onClick={onLeaveLobby}
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              backgroundColor: '#e74c3c',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              touchAction: 'manipulation',
+            }}
+          >
+            🚪 Wyjdź z gry
+          </button>
+        </div>
+
+        <p style={{ color: '#6c757d', fontSize: '13px', margin: '0 0 16px 0', textAlign: 'left' }}>
           Do gry wymagane są 4 obsadzone miejsca (gracze lub boty).
         </p>
 
@@ -90,56 +112,56 @@ export const LobbyModal: React.FC<LobbyModalProps> = ({
                     )}
                   </td>
                   <td>
-                    {/* Jeśli slot jest wolny lub jest botem, gracz może w niego usiąść */}
-                    {!isMe && !isOccupiedByHuman && (
-                      <button
-                        type="button"
-                        onClick={() => onClaimSlot(slot)}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '12px',
-                          backgroundColor: '#2ecc71',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontWeight: 'bold',
-                          marginRight: '6px',
-                          touchAction: 'manipulation',
-                        }}
-                      >
-                        Usiądź
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {/* Jeśli slot jest wolny lub zajęty przez bota, gracz może usiąść */}
+                      {!isMe && !isOccupiedByHuman && (
+                        <button
+                          type="button"
+                          onClick={() => onClaimSlot(slot)}
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '12px',
+                            backgroundColor: '#2ecc71',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: 'bold',
+                            touchAction: 'manipulation',
+                          }}
+                        >
+                          Usiądź
+                        </button>
+                      )}
 
-                    {/* Host ma dotykowy przycisk do cyklicznej zmiany typu slotu */}
-                    {isHost && !isOccupiedByHuman && (
-                      <button
-                        type="button"
-                        onClick={() => onToggleSlotType(slot)}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '12px',
-                          backgroundColor: isBot ? '#e8f4fd' : '#f8f9fa',
-                          color: '#2c3e50',
-                          border: '1px solid #ced4da',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          fontWeight: '600',
-                          touchAction: 'manipulation',
-                        }}
-                        title="Kliknij, aby zmienić typ"
-                      >
-                        {getSlotTypeLabel(playerTypes[slot] || 'HUMAN')} 🔄
-                      </button>
-                    )}
+                      {/* Przycisk zmiany typu slotu (tylko dla Hosta) */}
+                      {isHost && !isOccupiedByHuman && (
+                        <button
+                          type="button"
+                          onClick={() => onToggleSlotType(slot)}
+                          style={{
+                            padding: '8px 10px',
+                            fontSize: '12px',
+                            backgroundColor: isBot ? '#e8f4fd' : '#f8f9fa',
+                            color: '#2c3e50',
+                            border: '1px solid #ced4da',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: '600',
+                            touchAction: 'manipulation',
+                          }}
+                        >
+                          {getSlotTypeLabel(playerTypes[slot] || 'HUMAN')} 🔄
+                        </button>
+                      )}
 
-                    {!isHost && isOccupiedByHuman && !isMe && (
-                      <span style={{ fontSize: '12px', color: '#7f8c8d' }}>Zajęte</span>
-                    )}
-                    {isMe && (
-                      <span style={{ fontSize: '12px', color: '#27ae60', fontWeight: 'bold' }}>Twoje miejsce</span>
-                    )}
+                      {!isHost && isOccupiedByHuman && !isMe && (
+                        <span style={{ fontSize: '12px', color: '#7f8c8d' }}>Zajęte</span>
+                      )}
+                      {isMe && (
+                        <span style={{ fontSize: '12px', color: '#27ae60', fontWeight: 'bold' }}>Twoje miejsce</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
